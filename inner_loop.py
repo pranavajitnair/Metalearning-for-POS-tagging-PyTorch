@@ -30,10 +30,10 @@ class InnerLoop:
                         weights=OrderedDict((name,param-self.func(grad,param)) for ((name,param),grad) in zip(weights.items(), grads))
                         
                 meta_grads = {name:g for ((name, _),g) in zip(weights.items(),grads)}
-                return meta_grads,loss/(len(self.x_train))
+                return meta_grads,loss
             
         def func(self,grad,param):
                 if grad is not None:
                         return grad
                 else:
-                        return param/5.0
+                        return torch.zeros(param.shape)

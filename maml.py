@@ -15,7 +15,7 @@ class MetaLearn:
                 self.words=Word(self.hindi_sentences)
                 self.words.addWords()
                 self.x_train,self.y_train=preprocess(self.hindi_sentences,self.words)
-                self.marathi=InnerLoop(lossFunction,epochs,file_location_for_marathi,hidden_size,'marathi',self.words.n_words)
+                self.marathi=InnerLoop(lossFunction,epochs//10,file_location_for_marathi,hidden_size,'marathi',self.words.n_words)
                 self.lossFunction=lossFunction
                 self.hidden_size=hidden_size
                 self.epochs=epochs*10
@@ -50,13 +50,14 @@ class MetaLearn:
                 for epoch in range(self.epochs):
                         fast_weights=OrderedDict((name,param) for (name,param) in self.encoder.named_parameters())
                         grads,loss=self.marathi.train(fast_weights,epoch)
+                        print(str(epoch)+" inner loop "+str(loss.item()))
                         self.meta_update(grads,epoch)
 
 file_location_for_hindi='/home/pranav/Pictures/Hindi/hi_hdtb-ud-train.conllu'
 file_location_for_marathi='/home/pranav/Pictures/Hindi/hi_hdtb-ud-train.conllu'
 lossFunction=nn.CrossEntropyLoss()
-hidden_size=128
-epochs=1000
+hidden_size=160
+epochs=100
 
 metaLearn=MetaLearn(file_location_for_hindi,file_location_for_marathi,lossFunction,hidden_size,epochs)
 metaLearn.train()
