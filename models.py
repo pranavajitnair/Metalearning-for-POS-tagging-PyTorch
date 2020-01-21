@@ -10,24 +10,32 @@ class POSTagger(nn.Module):
                 self.embedding=nn.Embedding(n_words,h_size)
                 self.max_len=max_len
                 
-        def forward(self,input,weights,hidden=None):
-                self.embedding.weight=weights['embedding.weight']
-                input=self.embedding(input).view(1,self.max_len,-1)
                 
-                self.lstm.weight_ih_l0=weights['lstm.weight_ih_l0']
-                self.lstm.weight_hh_l0=weights['lstm.weight_hh_l0']
-                self.lstm.bias_ih_l0=weights['lstm.bias_ih_l0']
-                self.lstm.bias_hh_l0=weights['lstm.bias_hh_l0']
-                output,hidden=self.lstm(input,hidden)
+        def forward(self,input,weights=None,hidden=None):
+                if weights:                        
+                        self.embedding.weight.data=weights['embedding.weight']
+                        input=self.embedding(input).view(1,self.max_len,-1)
+                        
+                        self.lstm.weight_ih_l0.data=weights['lstm.weight_ih_l0']
+                        self.lstm.weight_hh_l0.data=weights['lstm.weight_hh_l0']
+                        self.lstm.bias_ih_l0.data=weights['lstm.bias_ih_l0']
+                        self.lstm.bias_hh_l0.data=weights['lstm.bias_hh_l0']
+                        output,hidden=self.lstm(input,hidden)
+                        
+                        self.Dense.weight.data=weights['Dense.weight']
+                        self.Dense.bias.data=weights['Dense.bias']
+                        output=self.Dense(output)
+                        output=output.squeeze()
                 
-                self.Dense.weight=weights['Dense.weight']
-                self.Dense.bias=weights['Dense.bias']
-                output=self.Dense(output)
-                output=output.squeeze()
-                
+                else:
+                        input=self.embedding(input).view(1,self.max_len,-1)
+                        output,hidden=self.lstm(input,hidden)
+                        output=self.Dense(output)
+                        output=output.squeeze()
+                        
                 return output,hidden
-            
-
+        
+        
 class Word:
         def __init__(self,data):
                 self.n_words=0
