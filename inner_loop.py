@@ -3,6 +3,7 @@ import pyconll
 from models import POSTagger,Word
 from functions import preprocess,preprocess_2
 from collections import OrderedDict
+import torch.optim as optim
 
 
 class InnerLoop:
@@ -19,21 +20,17 @@ class InnerLoop:
                 self.lossFunction=lossFunction
                 self.encoder=POSTagger(word_number,hidden_size,self.words.n_tokens,116)
                 self.epochs=epochs
+                self.optimizer=optim.SGD(self.encoder.parameters(),lr=0.01)
                             
         def train(self,weights,batch_number):
-                print("HA")
-                
+                self.encoder.load_state_dict(weights)
                 for j in range(self.epochs):
-                        output,_=self.encoder(torch.tensor(self.x_train[j+batch_number]),weights)
-                        loss=self.lossFunction(output,torch.tensor(self.y_train[j+batch_number])) 
-                        grads=torch.autograd.grad(loss,weights.values(),create_graph=True,allow_unused=True)
-                        weights=OrderedDict((name,param-self.func(grad,param)) for ((name,param),grad) in zip(weights.items(), grads))
+                        self.optimizer.zero_grad()
+                        output,_=self.encoder(torch.tensor(self.x_train[j+batch_number]))
+                        loss=self.lossFunction(output,torch.tensor(self.y_train[j+batch_number]))
+                        loss.backward()
+                        self.optimizer.step()
                         
-                meta_grads = {name:g for ((name, _),g) in zip(weights.items(),grads)}
+                meta_grads =OrderedDict((name,param.grad) for (name,param) in self.encoder.named_parameters())
                 return meta_grads,loss
             
-        def func(self,grad,param):
-                if grad is not None:
-                        return grad
-                else:
-                        return torch.zeros(param.shape)

@@ -1,12 +1,9 @@
-import numpy as np
-import random
-import pandas as pd
 import torch.nn.functional as F
 import torch.nn as nn
-import nltk
 from matplotlib import pyplot as plt
 from nltk.corpus import treebank
 import torch
+from collections import OrderedDict
 
 data=treebank.tagged_sents(tagset='universal')
 
@@ -73,6 +70,8 @@ def train(x_train,y_train,encoder,optimizer,lossFunction):
                   output,hidden=encoder(torch.tensor(x_train[i]))
                   loss+=lossFunction(output,torch.tensor(y_train[i]))
           loss.backward()
+          lis=OrderedDict((name,param) for(name,param) in encoder.named_parameters())
+          print(lis['embedding.weight'].grad.shape)
           optimizer.step()
           
           return loss.item()/len(x_train)

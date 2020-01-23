@@ -56,8 +56,8 @@ class MetaLearn:
 file_location_for_hindi='/home/pranav/Pictures/Hindi/hi_hdtb-ud-train.conllu'
 file_location_for_marathi='/home/pranav/Pictures/Hindi/hi_hdtb-ud-train.conllu'
 lossFunction=nn.CrossEntropyLoss()
-hidden_size=160
-epochs=100
+hidden_size=10
+epochs=10
 
 metaLearn=MetaLearn(file_location_for_hindi,file_location_for_marathi,lossFunction,hidden_size,epochs)
 metaLearn.train()
