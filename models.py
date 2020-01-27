@@ -35,7 +35,8 @@ class Word:
                 k=set()
                 for sentence in self.data:
                         for token in sentence:
-                                s.add(token.form)
+                                if token.form is not None:
+                                        s.add(token.form)
                                 k.add(token.upos)
                 s=list(s)
                 k=list(k)

@@ -7,7 +7,7 @@ import torch.optim as optim
 
 
 class InnerLoop:
-        def __init__(self,lossFunction,epochs,file_location,hidden_size,lang,word_number):
+        def __init__(self,lossFunction,epochs,file_location,hidden_size,lang,word_number,max_len):
                 
                 file_location=file_location
                 sentences=pyconll.load_from_file(file_location)
@@ -15,10 +15,9 @@ class InnerLoop:
                 
                 self.words=Word(sentences)
                 self.words.addWords()
-               
-                self.x_train,self.y_train=preprocess(sentences,self.words)
+                self.x_train,self.y_train=preprocess(sentences,self.words,max_len)
                 self.lossFunction=lossFunction
-                self.encoder=POSTagger(word_number,hidden_size,self.words.n_tokens,116)
+                self.encoder=POSTagger(word_number,hidden_size,self.words.n_tokens,max_len)
                 self.epochs=epochs
                 self.optimizer=optim.SGD(self.encoder.parameters(),lr=0.01)
                             
@@ -32,5 +31,4 @@ class InnerLoop:
                         self.optimizer.step()
                         
                 meta_grads =OrderedDict((name,param.grad) for (name,param) in self.encoder.named_parameters())
-                return meta_grads,loss
-            
+                return meta_grads,loss            
