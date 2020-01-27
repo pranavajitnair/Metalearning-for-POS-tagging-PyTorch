@@ -102,5 +102,5 @@ test_size=10
 max_len=116
 
 metaLearn=MetaLearn(file_location_for_hindi,file_location_for_marathi,lossFunction,hidden_size,epochs,inner_epoch,max_len)
-#metaLearn.train()
+metaLearn.train()
 metaLearn.test(test_size)
