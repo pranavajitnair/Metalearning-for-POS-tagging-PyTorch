@@ -2,9 +2,7 @@ from inner_loop import InnerLoop
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from models import POSTagger,Word
-from functions import preprocess
-import pyconll
+from models import POSTagger
 import torch
 from collections import OrderedDict
 import os
@@ -13,21 +11,20 @@ import os
 class MetaLearn:
         def __init__(self,file_location_for_hindi,file_location_for_marathi,lossFunction,hidden_size,epochs,inner_epoch,max_len):
                 
-                self.hindi_sentences=pyconll.load_from_file(file_location_for_hindi)
-                self.words=Word(self.hindi_sentences)
-                self.words.addWords()
-                self.x_train,self.y_train=preprocess(self.hindi_sentences,self.words,max_len)
-                self.marathi=InnerLoop(lossFunction,inner_epoch,file_location_for_marathi,hidden_size,'marathi',self.words.n_words,max_len)
-                self.lossFunction=lossFunction
+                self.hindi=InnerLoop(lossFunction,inner_epoch,file_location_for_hindi,hidden_size,'hindi',None,max_len)
+                self.marathi=InnerLoop(lossFunction,inner_epoch,file_location_for_marathi,hidden_size,'marathi',self.hindi.words.n_words,max_len)
                 self.hidden_size=hidden_size
                 self.epochs=epochs
-                self.encoder=POSTagger(self.words.n_words,hidden_size,self.words.n_tokens,max_len)
+                self.encoder=POSTagger(self.hindi.words.n_words,hidden_size,self.hindi.words.n_tokens,max_len)
                 self.optimizer=optim.SGD(self.encoder.parameters(),lr=0.01)
+                self.lossFunction=lossFunction
                 self.max_len=max_len
+                self.inner_epoch=inner_epoch
                 
-        def meta_update(self,grads,i):
-                x_val=self.x_train[i]
-                y_val=self.y_train[i]
+        def meta_update(self,grads,i,print_epoch):
+              
+                x_val=self.marathi.x_train[i]
+                y_val=self.marathi.y_train[i]
                 
                 output,hidden=self.encoder(torch.tensor(x_val))
                 loss=self.lossFunction(output,torch.tensor(y_val))
@@ -40,22 +37,36 @@ class MetaLearn:
                                         return grads[key]
                                 return replace_grad
                         hooks.append(v.register_hook(get_closure()))
-                        
+                self.optimizer.zero_grad()        
                 loss.backward()
-                print(str(i)+" "+str(loss.item()))
-                self.optimizer.zero_grad()
+                print(str(print_epoch)+" "+str(loss.item()))
                 self.optimizer.step()
-                
+
                 for h in hooks:
-                         h.remove()
+                        h.remove()
                 
         def train(self):
                 for epoch in range(self.epochs):
                         fast_weights=OrderedDict((name,param) for (name,param) in self.encoder.named_parameters())
-                        grads,loss=self.marathi.train(fast_weights,epoch)
-                        self.meta_update(grads,epoch)
+                        
+                        grad1=self.marathi.train(fast_weights,(epoch*self.inner_epoch)%200)
+                        grad2=self.hindi.train(fast_weights,epoch*self.inner_epoch)
+                        
+                        grads=OrderedDict()
+                        l=['embedding.weight','lstm.weight_ih_l0','lstm.weight_hh_l0','lstm.bias_ih_l0','lstm.bias_hh_l0','Dense.weight','Dense.bias']
+                        for k in l:
+                                grads[k]=grad1[k]+grad2[k]
+                                
+                        self.meta_update(grads,(epoch*self.inner_epoch)%200,epoch)
                         
         def test(self,t):
+                for i in range(t,self.inner_epoch+t):
+                        output,hidden=self.encoder.train(torch.tensor(self.marathi.x_train[i]))
+                        loss=self.lossFunction(output,torch.tensor(self.marathi.y_train[i]))
+                        self.optimizer.zero_grad()
+                        loss.backward()
+                        self.optimizer.step()
+                        
                 for i in range(t):
                         output,hidden=self.encoder(torch.tensor(self.marathi.x_train[i]))
                         output=F.softmax(output,dim=1)
@@ -95,8 +106,8 @@ class MetaLearn:
 file_location_for_hindi=os.getcwd()+'/hi_hdtb-ud-train.conllu'
 file_location_for_marathi=os.getcwd()+'/mr_ufal-ud-train.conllu'
 lossFunction=nn.CrossEntropyLoss()
-hidden_size=512
-epochs=1000
+hidden_size=1024
+epochs=20
 inner_epoch=15
 test_size=10
 max_len=116
