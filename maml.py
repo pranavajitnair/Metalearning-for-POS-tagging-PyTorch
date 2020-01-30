@@ -16,34 +16,40 @@ class MetaLearn:
                 self.hidden_size=hidden_size
                 self.epochs=epochs
                 self.encoder=POSTagger(self.hindi.words.n_words,hidden_size,self.hindi.words.n_tokens,max_len)
-                self.optimizer=optim.SGD(self.encoder.parameters(),lr=0.01)
+                self.optimizer=optim.Adam(self.encoder.parameters(),lr=0.01)
                 self.lossFunction=lossFunction
                 self.max_len=max_len
                 self.inner_epoch=inner_epoch
                 
-        def meta_update(self,grads,i,print_epoch,loss):
+        def meta_update1(self,grads,i,print_epoch):
               
-#                x_val=self.marathi.x_train[i]
-#                y_val=self.marathi.y_train[i]
-#                
-#                output,hidden=self.encoder(torch.tensor(x_val))
-#                loss=self.lossFunction(output,torch.tensor(y_val))
-#                
-#                hooks = []
-#                for (k,v) in self.encoder.named_parameters():
-#                        def get_closure():
-#                                key = k
-#                                def replace_grad(grad):
-#                                        return grads[key]
-#                                return replace_grad
-#                        hooks.append(v.register_hook(get_closure()))
+                x_val=self.marathi.x_train[i]
+                y_val=self.marathi.y_train[i]
+                
+                output,hidden=self.encoder(torch.tensor(x_val))
+                loss=self.lossFunction(output,torch.tensor(y_val))
+                
+                hooks = []
+                for (k,v) in self.encoder.named_parameters():
+                        def get_closure():
+                                key = k
+                                def replace_grad(grad):
+                                        return grads[key]
+                                return replace_grad
+                        hooks.append(v.register_hook(get_closure()))
                 self.optimizer.zero_grad()        
                 loss.backward()
                 print(str(print_epoch)+" "+str(loss.item()))
                 self.optimizer.step()
 
-#                for h in hooks:
-#                        h.remove()
+                for h in hooks:
+                        h.remove()
+                        
+         def meta_update2(self,loss,print_epoch):
+                self.optimizer.zero_grad()    
+                loss.backward()
+                print(str(print_epoch)+" "+str(loss.item()))
+                self.optimizer.step()
                 
         def train(self):
                 for epoch in range(self.epochs):
@@ -57,7 +63,8 @@ class MetaLearn:
                         for k in l:
                                 grads[k]=grad1[k]+grad2[k]
                                 
-                        self.meta_update(grads,(epoch*self.inner_epoch)%200,epoch,loss1+loss2)
+                        self.meta_update1(grads,(epoch*self.inner_epoch)%200,epoch)
+                        #self.meta_update2(loss1+loss2,epoch)
                         
         def test(self,t):
                 for i in range(t,self.inner_epoch+t):
