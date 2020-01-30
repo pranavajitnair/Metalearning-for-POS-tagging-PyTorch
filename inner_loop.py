@@ -24,16 +24,17 @@ class InnerLoop:
                self.optimizer=optim.SGD(self.encoder.parameters(),lr=0.01)
                            
        def train(self,weights,batch_number):
-               self.encoder.load_state_dict(weights)
                for j in range(self.epochs):
-                       self.optimizer.zero_grad()
+                       self.encoder.load_state_dict(weights)
                        output,_=self.encoder(torch.tensor(self.x_train[j+batch_number]))
                        loss=self.lossFunction(output,torch.tensor(self.y_train[j+batch_number]))
-                       loss.backward()
-                       self.optimizer.step()
+                       grads=torch.autograd.grad(loss,self.encoder.parameters(),create_graph=True)
+                       weights=OrderedDict((name, param - 0.01*grad) for ((name, param), grad) in zip(weights.items(), grads))
                        
+               self.encoder.load_state_dict(weights)
                output,_=self.encoder(torch.tensor(self.x_train[j+batch_number]))
-               loss=self.lossFunction(output,torch.tensor(self.y_train[self.epochs+batch_number]))
-               loss.backward()
-               meta_grads =OrderedDict((name,param.grad) for (name,param) in self.encoder.named_parameters())
-               return meta_grads
+               loss=self.lossFunction(output,torch.tensor(self.y_train[j+batch_number]))
+               grads=torch.autograd.grad(loss,self.encoder.parameters(),create_graph=True)
+               meta_grads={name:g for ((name, _), g) in zip(self.encoder.named_parameters(), grads)}
+                       
+               return meta_grads,loss

@@ -21,47 +21,47 @@ class MetaLearn:
                 self.max_len=max_len
                 self.inner_epoch=inner_epoch
                 
-        def meta_update(self,grads,i,print_epoch):
+        def meta_update(self,grads,i,print_epoch,loss):
               
-                x_val=self.marathi.x_train[i]
-                y_val=self.marathi.y_train[i]
-                
-                output,hidden=self.encoder(torch.tensor(x_val))
-                loss=self.lossFunction(output,torch.tensor(y_val))
-                
-                hooks = []
-                for (k,v) in self.encoder.named_parameters():
-                        def get_closure():
-                                key = k
-                                def replace_grad(grad):
-                                        return grads[key]
-                                return replace_grad
-                        hooks.append(v.register_hook(get_closure()))
+#                x_val=self.marathi.x_train[i]
+#                y_val=self.marathi.y_train[i]
+#                
+#                output,hidden=self.encoder(torch.tensor(x_val))
+#                loss=self.lossFunction(output,torch.tensor(y_val))
+#                
+#                hooks = []
+#                for (k,v) in self.encoder.named_parameters():
+#                        def get_closure():
+#                                key = k
+#                                def replace_grad(grad):
+#                                        return grads[key]
+#                                return replace_grad
+#                        hooks.append(v.register_hook(get_closure()))
                 self.optimizer.zero_grad()        
                 loss.backward()
                 print(str(print_epoch)+" "+str(loss.item()))
                 self.optimizer.step()
 
-                for h in hooks:
-                        h.remove()
+#                for h in hooks:
+#                        h.remove()
                 
         def train(self):
                 for epoch in range(self.epochs):
                         fast_weights=OrderedDict((name,param) for (name,param) in self.encoder.named_parameters())
                         
-                        grad1=self.marathi.train(fast_weights,(epoch*self.inner_epoch)%200)
-                        grad2=self.hindi.train(fast_weights,epoch*self.inner_epoch)
+                        grad1,loss1=self.marathi.train(fast_weights,(epoch*self.inner_epoch)%200)
+                        grad2,loss2=self.hindi.train(fast_weights,epoch*self.inner_epoch)
                         
                         grads=OrderedDict()
                         l=['embedding.weight','lstm.weight_ih_l0','lstm.weight_hh_l0','lstm.bias_ih_l0','lstm.bias_hh_l0','Dense.weight','Dense.bias']
                         for k in l:
                                 grads[k]=grad1[k]+grad2[k]
                                 
-                        self.meta_update(grads,(epoch*self.inner_epoch)%200,epoch)
+                        self.meta_update(grads,(epoch*self.inner_epoch)%200,epoch,loss1+loss2)
                         
         def test(self,t):
                 for i in range(t,self.inner_epoch+t):
-                        output,hidden=self.encoder.train(torch.tensor(self.marathi.x_train[i]))
+                        output,hidden=self.encoder(torch.tensor(self.marathi.x_train[i]))
                         loss=self.lossFunction(output,torch.tensor(self.marathi.y_train[i]))
                         self.optimizer.zero_grad()
                         loss.backward()
