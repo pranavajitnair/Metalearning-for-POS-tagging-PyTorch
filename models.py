@@ -1,24 +1,22 @@
 import torch.nn as nn
 
+
 class POSTagger(nn.Module):
     
-        def __init__(self,n_words,h_size,n_tokens,max_len):
+        def __init__(self,h_size,n_tokens):
                 super(POSTagger,self).__init__()
-                self.embedding=nn.Embedding(n_words,h_size)
-                self.lstm=nn.GRU(h_size,h_size)
-                self.Dense=nn.Linear(h_size,n_tokens)
-                self.max_len=max_len
-                
+                self.lstm=nn.GRU(h_size,h_size,num_layers=1)
+                self.Dense=nn.Linear(h_size,n_tokens)     
                 
         def forward(self,input,weights=None,hidden=None):
                 
-                input=self.embedding(input).view(1,self.max_len,-1)
                 output,hidden=self.lstm(input,hidden)
                 output=self.Dense(output)
                 output=output.squeeze()
                         
                 return output,hidden
-        
+            
+                   
 class Word:
         def __init__(self,data):
                 self.n_words=0
