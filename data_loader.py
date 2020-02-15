@@ -56,6 +56,8 @@ def get_tokens(sentences):
         for sentence in sentences:
                 for token in sentence:
                         s.add(token.upos)
+        s.add('START')
+        s.add('END')
         s=list(s)
         dict={}
         dict1={}
@@ -85,9 +87,9 @@ class DataLoader(object):
                 for token in sentence:
                         l.append(self.model[token])
                         
-                embedding=torch.tensor(l).view(1,self.max_len,-1)
+                embedding=torch.tensor(l).view(1,self.max_len,-1)  #.cuda()
                 self.train_number=(self.train_number+1)%len(self.train)
-                tags=torch.tensor(tags)
+                tags=torch.tensor(tags)  #.cuda()
                 
                 return embedding,tags
             

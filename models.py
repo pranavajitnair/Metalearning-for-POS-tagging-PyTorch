@@ -1,12 +1,11 @@
 import torch.nn as nn
 
-
 class POSTagger(nn.Module):
     
         def __init__(self,h_size,n_tokens):
                 super(POSTagger,self).__init__()
-                self.lstm=nn.GRU(h_size,h_size,num_layers=1)
-                self.Dense=nn.Linear(h_size,n_tokens)     
+                self.lstm=nn.LSTM(h_size,h_size,num_layers=1,bidirectional=True)
+                self.Dense=nn.Linear(h_size*2,n_tokens)     
                 
         def forward(self,input,weights=None,hidden=None):
                 
@@ -15,8 +14,8 @@ class POSTagger(nn.Module):
                 output=output.squeeze()
                         
                 return output,hidden
-            
-                   
+
+
 class Word:
         def __init__(self,data):
                 self.n_words=0
