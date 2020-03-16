@@ -30,9 +30,11 @@ def get_sentences(sentences_train,sentences_test,tags,max_len):
                         if token.form is not None:
                                 k.append(token.form)
                                 t.append(tags[token.upos])
-                for _ in range(len(k),max_len):
-                        k.append('EOS')
-                        t.append(tags['X'])
+                k.append('EOS')
+                t.append(tags['X'])
+#                for _ in range(len(k),max_len):
+#                        k.append('EOS')
+#                        t.append(tags['X'])
                 sentences_for_train.append(k)
                 tags_for_train.append(t)
 
@@ -43,9 +45,11 @@ def get_sentences(sentences_train,sentences_test,tags,max_len):
                         if token.form is not None:
                                 k.append(token.form)
                                 t.append(tags[token.upos])
-                for _ in range(len(k),max_len):
-                        k.append('EOS')
-                        t.append(tags['X'])
+                k.append('EOS')
+                t.append(tags['X'])
+#                for _ in range(len(k),max_len):
+#                        k.append('EOS')
+#                        t.append(tags['X'])
                 sentences_for_test.append(k)
                 tags_for_test.append(t)
                 
@@ -87,7 +91,7 @@ class DataLoader(object):
                 for token in sentence:
                         l.append(self.model[token])
                         
-                embedding=torch.tensor(l).view(1,self.max_len,-1)  #.cuda()
+                embedding=torch.tensor(l).view(1,len(sentence),-1)  #.cuda()
                 self.train_number=(self.train_number+1)%len(self.train)
                 tags=torch.tensor(tags)  #.cuda()
                 

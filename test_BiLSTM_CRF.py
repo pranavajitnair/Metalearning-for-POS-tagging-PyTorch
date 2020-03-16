@@ -3,6 +3,46 @@ import gensim.models as gs
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
+
+
+class Attn(nn.Module):
+    def __init__(self, method, hidden_size):
+        super(Attn, self).__init__()
+        self.method = method
+        if self.method not in ['dot', 'general', 'concat']:
+            raise ValueError(self.method, "is not an appropriate attention method.")
+        self.hidden_size = hidden_size
+        if self.method == 'general':
+            self.attn = nn.Linear(self.hidden_size*2, hidden_size*2)
+        elif self.method == 'concat':
+            self.attn = nn.Linear(self.hidden_size * 2, hidden_size)
+            self.v = nn.Parameter(torch.FloatTensor(hidden_size))
+
+    def dot_score(self, hidden, encoder_output):
+        
+        return torch.sum(hidden * encoder_output, dim=2)
+
+    def general_score(self, hidden, encoder_output):
+        energy = self.attn(encoder_output)
+        return torch.sum(hidden * energy, dim=2)
+
+    def concat_score(self, hidden, encoder_output):
+        energy = self.attn(torch.cat((hidden.expand(encoder_output.size(0), -1, -1), encoder_output), 2)).tanh()
+        
+        return torch.sum(self.v * energy, dim=2)
+
+    def forward(self, hidden, encoder_outputs):
+        if self.method == 'general':
+            attn_energies = self.general_score(hidden, encoder_outputs)
+        elif self.method == 'concat':
+            attn_energies = self.concat_score(hidden, encoder_outputs)
+        elif self.method == 'dot':
+            attn_energies = self.dot_score(hidden, encoder_outputs)
+
+        attn_energies = attn_energies.t()
+
+        return F.softmax(attn_energies, dim=1).unsqueeze(1)
 
 
 class CRF_BiLSTM(nn.Module):
@@ -18,13 +58,20 @@ class CRF_BiLSTM(nn.Module):
                 self.token_dict=token_dict
                 
                 self.transitions=nn.Parameter(torch.randn(self.n_tokens,self.n_tokens))
+                
+#                self.lstm1=nn.LSTM(h_size,h_size,num_layers=1,bidirectional=True)
                 self.lstm=nn.LSTM(h_size,h_size,num_layers=1,bidirectional=True)
+                
                 self.Dense1=nn.Linear(h_size*2,self.n_tokens)
                 
                 self.transitions.data[self.token_dict[self.start_token], :]=-10000.0
                 self.transitions.data[:,self.token_dict[self.end_token]]=-10000.0
                 
                 self.optimizer=optim.Adam(self.parameters(),lr=0.01)
+                
+#                self.attention=Attn('general',h_size)
+#                self.concat = nn.Linear(h_size*4,h_size)
+                
                 
         def argmax(vec):
                 _, idx=torch.max(vec,1)
@@ -33,11 +80,26 @@ class CRF_BiLSTM(nn.Module):
                          
         def get_lstm_feats(self,sentence):
             
+#                output_treat,hidden_treat=self.lstm1(sentence,None)
+#                output,hidden=self.lstm2(sentence,hidden_treat)
+#                
+#                attn_weights=self.attention(output,output_treat)
+#                context = attn_weights.bmm(output_treat.transpose(0, 1))
+#                
+#                output=output.squeeze(0)
+#                context = context.squeeze(1)
+#                concat_input=torch.cat((output,context),1)
+#                concat_output=torch.tanh(self.concat(concat_input))
+#                
+#                output_final=self.Dense1(concat_output)
+#                output_final=output_final.squeeze()
+#                return output_final
+            
                 output,hidden=self.lstm(sentence,None)
                 output=self.Dense1(output)
                 output=output.squeeze()
                 return output
-        
+    
         def log_sum_exp(self,vec):
                 _, idx=torch.max(vec,1)
                 max_score=vec[0,idx.item()]
@@ -136,7 +198,7 @@ class CRF_BiLSTM(nn.Module):
 
 max_len=116
 hidden_size=1024
-epochs=400
+epochs=1000
 
 marathi_train,marathi_test,hindi_train,hindi_test=load_sentences()
 tokens_dict,dict_token,n_tokens=get_tokens(marathi_train)
@@ -152,8 +214,9 @@ model=CRF_BiLSTM(1,hidden_size,n_tokens,marathi_data_loader,tokens_dict)
 for i in range(epochs):
         print(i)
         model.train()
-        
-for _ in range(30):
+
+a=0
+for _ in range(47):
     
         sentence,tags,sentence_text=model.data_loader.load_next_test()
         score,tag_seq=model.forward(sentence)
@@ -164,18 +227,20 @@ for _ in range(30):
         s2=''
         s3=''
         
-        while sentence_text[j]!='EOS':
+        for _ in range(len(sentence_text)):
                 s1+=sentence_text[j]+' '
                 s2+=dict_token[tag_seq[j]]+' '
                 s3+=dict_token[int(tags[j])]+' '
                 if tag_seq[j]==tags[j]:
                         count+=1
                 j+=1
-        
-        print(100*(count/(j)))
+                
+        accuracy=100*(count/(j))
+        a+=accuracy
+        print(accuracy)
         print(s1)
         print(s2)
         print(s3)
-                
         
-        
+print()
+print(a/47)

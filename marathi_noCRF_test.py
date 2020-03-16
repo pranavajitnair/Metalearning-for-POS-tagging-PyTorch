@@ -110,4 +110,3 @@ for _ in range(epochs):
         
 for _ in range(30):
         model.test()
-        
