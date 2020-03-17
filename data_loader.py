@@ -30,8 +30,8 @@ def get_sentences(sentences_train,sentences_test,tags,max_len):
                         if token.form is not None:
                                 k.append(token.form)
                                 t.append(tags[token.upos])
-                k.append('EOS')
-                t.append(tags['X'])
+#                k.append('EOS')
+#                t.append(tags['X'])
 #                for _ in range(len(k),max_len):
 #                        k.append('EOS')
 #                        t.append(tags['X'])
@@ -43,10 +43,13 @@ def get_sentences(sentences_train,sentences_test,tags,max_len):
                 t=[]
                 for token in sentence:
                         if token.form is not None:
-                                k.append(token.form)
+                                if token.form=="'":
+                                        k.append('"')
+                                else:
+                                        k.append(token.form)      
                                 t.append(tags[token.upos])
-                k.append('EOS')
-                t.append(tags['X'])
+#                k.append('EOS')
+#                t.append(tags['X'])
 #                for _ in range(len(k),max_len):
 #                        k.append('EOS')
 #                        t.append(tags['X'])
@@ -71,6 +74,21 @@ def get_tokens(sentences):
         
         return dict,dict1,len(s)
         
+def get_characters(sentences):
+        s=set()
+        for sentence in sentences:
+                for word in sentence:
+                        for character in word:
+                                s.add(character)
+                                
+        s=list(s)
+        
+        dict={}
+        for i in range(len(s)):
+                dict[s[i]]=i
+                
+        return dict,len(s)
+
 
 class DataLoader(object):
         def __init__(self,train_sentences,test_sentences,train_tags,test_tags,max_len,model):
@@ -95,7 +113,7 @@ class DataLoader(object):
                 self.train_number=(self.train_number+1)%len(self.train)
                 tags=torch.tensor(tags)  #.cuda()
                 
-                return embedding,tags
+                return embedding,tags,sentence
             
         def load_next_test(self):
                 sentence=self.test[self.test_number]

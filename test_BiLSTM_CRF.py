@@ -1,4 +1,4 @@
-from data_loader import load_sentences,get_sentences,get_tokens,DataLoader
+from data_loader import load_sentences,get_sentences,get_tokens,DataLoader,get_characters
 import gensim.models as gs
 import torch
 import torch.nn as nn
@@ -46,7 +46,7 @@ class Attn(nn.Module):
 
 
 class CRF_BiLSTM(nn.Module):
-        def __init__(self,epochs,h_size,n_tokens,data_loader,token_dict):
+        def __init__(self,epochs,h_size,n_tokens,data_loader,token_dict,char_dict,n_chars):
                 super(CRF_BiLSTM,self).__init__()
                 
                 self.h_size=h_size
@@ -56,10 +56,13 @@ class CRF_BiLSTM(nn.Module):
                 self.start_token='START'
                 self.end_token='END'
                 self.token_dict=token_dict
+                self.char_dict=char_dict
+                self.n_chars=n_chars
+                
+                self.embeddings=nn.Embedding(self.n_chars,self.h_size*2)
                 
                 self.transitions=nn.Parameter(torch.randn(self.n_tokens,self.n_tokens))
                 
-#                self.lstm1=nn.LSTM(h_size,h_size,num_layers=1,bidirectional=True)
                 self.lstm=nn.LSTM(h_size,h_size,num_layers=1,bidirectional=True)
                 
                 self.Dense1=nn.Linear(h_size*2,self.n_tokens)
@@ -69,35 +72,36 @@ class CRF_BiLSTM(nn.Module):
                 
                 self.optimizer=optim.Adam(self.parameters(),lr=0.01)
                 
-#                self.attention=Attn('general',h_size)
-#                self.concat = nn.Linear(h_size*4,h_size)
-                
-                
         def argmax(vec):
                 _, idx=torch.max(vec,1)
                 
                 return idx.item()
                          
-        def get_lstm_feats(self,sentence):
-            
-#                output_treat,hidden_treat=self.lstm1(sentence,None)
-#                output,hidden=self.lstm2(sentence,hidden_treat)
-#                
-#                attn_weights=self.attention(output,output_treat)
-#                context = attn_weights.bmm(output_treat.transpose(0, 1))
-#                
-#                output=output.squeeze(0)
-#                context = context.squeeze(1)
-#                concat_input=torch.cat((output,context),1)
-#                concat_output=torch.tanh(self.concat(concat_input))
-#                
-#                output_final=self.Dense1(concat_output)
-#                output_final=output_final.squeeze()
-#                return output_final
-            
+        def get_lstm_feats(self,sentence,char_list):
+                
+                l=[]
+                sumlist=torch.ones((1,self.h_size*2))
+                hidden=None
+                for char_number in char_list:
+                        if char_number==-1:
+                                l.append(sumlist)
+                                sumlist=torch.ones((1,self.h_size*2))
+                                hidden=None
+                        else:
+                                embedding=(self.embeddings(torch.tensor(char_number)))**2
+                                sumlist*=embedding
+                                
+                l=l[1:]
+               
                 output,hidden=self.lstm(sentence,None)
+
+                for i in range(len(l)):
+                        em=l[i].squeeze()
+                        output[0][i]+=em
+                        
                 output=self.Dense1(output)
                 output=output.squeeze()
+                
                 return output
     
         def log_sum_exp(self,vec):
@@ -136,8 +140,8 @@ class CRF_BiLSTM(nn.Module):
                 
                 return alpha
                 
-        def neg_log_likelihood(self,sentence,tags):
-                feats=self.get_lstm_feats(sentence)
+        def neg_log_likelihood(self,sentence,tags,char_list):
+                feats=self.get_lstm_feats(sentence,char_list)
                 forward_score=self.forward_prop(feats)
                 gold_score=self.score_sentence(feats,tags)
                 
@@ -181,19 +185,33 @@ class CRF_BiLSTM(nn.Module):
             
         def train(self):
                 self.optimizer.zero_grad()
-                sentence,tags=self.data_loader.load_next()
-                loss=self.neg_log_likelihood(sentence,tags)
+                sentence,tags,sentence_text=self.data_loader.load_next()
+                char_list=self.get_characters(sentence_text) 
+                
+                loss=self.neg_log_likelihood(sentence,tags,char_list)
                 print(loss.item())
                 loss.backward()
                
                 self.optimizer.step()
                
             
-        def forward(self,sentence):
-                lstm_feats=self.get_lstm_feats(sentence)
+        def forward(self,sentence,sentence_text):
+                char_list=self.get_characters(sentence_text)            
+                
+                lstm_feats=self.get_lstm_feats(sentence,char_list)
                 score,tag_seq=self.viterbi_decode(lstm_feats)
                 
                 return score,tag_seq
+            
+        def get_characters(self,sentence):
+                s=[]
+                s.append(-1)
+                for word in sentence:
+                        for character in word:
+                                s.append(self.char_dict[character])
+                        s.append(-1)
+                
+                return s
             
 
 max_len=116
@@ -207,9 +225,11 @@ marathi_train,marathi_test,marathi_train_tags,marathi_test_tags=get_sentences(ma
 
 model_marathi=gs.Word2Vec(marathi_test+marathi_train,min_count=1,size=hidden_size)
 
+char_dict,n_chars=get_characters(marathi_train)
+
 marathi_data_loader=DataLoader(marathi_train,marathi_test,marathi_train_tags,marathi_test_tags,max_len,model_marathi)
 
-model=CRF_BiLSTM(1,hidden_size,n_tokens,marathi_data_loader,tokens_dict)
+model=CRF_BiLSTM(1,hidden_size,n_tokens,marathi_data_loader,tokens_dict,char_dict,n_chars)
 
 for i in range(epochs):
         print(i)
@@ -219,7 +239,7 @@ a=0
 for _ in range(47):
     
         sentence,tags,sentence_text=model.data_loader.load_next_test()
-        score,tag_seq=model.forward(sentence)
+        score,tag_seq=model.forward(sentence,sentence_text)
                 
         count=0
         j=0
