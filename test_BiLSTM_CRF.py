@@ -59,13 +59,20 @@ class CRF_BiLSTM(nn.Module):
                 self.char_dict=char_dict
                 self.n_chars=n_chars
                 
-                self.embeddings=nn.Embedding(self.n_chars,self.h_size*2)
+                self.embeddings=nn.Embedding(self.n_chars,h_size*2)
+                nn.init.xavier_normal_(self.embeddings.weight)
                 
                 self.transitions=nn.Parameter(torch.randn(self.n_tokens,self.n_tokens))
+                nn.init.xavier_normal_(self.transitions.data)
                 
                 self.lstm=nn.LSTM(h_size,h_size,num_layers=1,bidirectional=True)
                 
+                for name,weight in self.lstm.named_parameters():
+                        if 'weight' in name:
+                                nn.init.xavier_normal_(weight)
+                
                 self.Dense1=nn.Linear(h_size*2,self.n_tokens)
+                nn.init.xavier_normal_(self.Dense1.weight)
                 
                 self.transitions.data[self.token_dict[self.start_token], :]=-10000.0
                 self.transitions.data[:,self.token_dict[self.end_token]]=-10000.0
@@ -84,8 +91,9 @@ class CRF_BiLSTM(nn.Module):
                 hidden=None
                 for char_number in char_list:
                         if char_number==-1:
+                                sumlist=F.relu(sumlist) #test
                                 l.append(sumlist)
-                                sumlist=torch.ones((1,self.h_size*2))
+                                sumlist=torch.ones((1,self.h_size*2))  #256 good
                                 hidden=None
                         else:
                                 embedding=(self.embeddings(torch.tensor(char_number)))**2
@@ -98,7 +106,7 @@ class CRF_BiLSTM(nn.Module):
                 for i in range(len(l)):
                         em=l[i].squeeze()
                         output[0][i]+=em
-                        
+
                 output=self.Dense1(output)
                 output=output.squeeze()
                 
@@ -213,6 +221,37 @@ class CRF_BiLSTM(nn.Module):
                 
                 return s
             
+        def test(self):
+                a=0
+                for _ in range(47):
+                    
+                        sentence,tags,sentence_text=self.data_loader.load_next_test()
+                        score,tag_seq=model.forward(sentence,sentence_text)
+                                
+                        count=0
+                        j=0
+                        s1=''
+                        s2=''
+                        s3=''
+                        
+                        for _ in range(len(sentence_text)):
+                                s1+=sentence_text[j]+' '
+                                s2+=dict_token[tag_seq[j]]+' '
+                                s3+=dict_token[int(tags[j])]+' '
+                                if tag_seq[j]==tags[j]:
+                                        count+=1
+                                j+=1
+                                
+                        accuracy=100*(count/(j))
+                        a+=accuracy
+                        print(accuracy)
+                        print(s1)
+                        print(s2)
+                        print(s3)
+                        
+                print()
+                print(a/47)
+            
 
 max_len=116
 hidden_size=1024
@@ -234,33 +273,5 @@ model=CRF_BiLSTM(1,hidden_size,n_tokens,marathi_data_loader,tokens_dict,char_dic
 for i in range(epochs):
         print(i)
         model.train()
-
-a=0
-for _ in range(47):
-    
-        sentence,tags,sentence_text=model.data_loader.load_next_test()
-        score,tag_seq=model.forward(sentence,sentence_text)
-                
-        count=0
-        j=0
-        s1=''
-        s2=''
-        s3=''
         
-        for _ in range(len(sentence_text)):
-                s1+=sentence_text[j]+' '
-                s2+=dict_token[tag_seq[j]]+' '
-                s3+=dict_token[int(tags[j])]+' '
-                if tag_seq[j]==tags[j]:
-                        count+=1
-                j+=1
-                
-        accuracy=100*(count/(j))
-        a+=accuracy
-        print(accuracy)
-        print(s1)
-        print(s2)
-        print(s3)
-        
-print()
-print(a/47)
+model.test()
