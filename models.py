@@ -17,7 +17,7 @@ class POSTagger(nn.Module):
 
 
 class Word:
-        def __init__(self,data):
+        def __init__(self,data,data_test):
                 self.n_words=0
                 self.n_tokens=16
                 self.word_to_int={}
@@ -25,12 +25,19 @@ class Word:
                 self.data=data
                 self.token_to_int={}
                 self.int_to_token={}
-        
+                self.data_test=data_test
+                
         def addWords(self):
                 s=set()
-                s.add('PAD')
+                #s.add('PAD')
                 k=set()
                 for sentence in self.data:
+                        for token in sentence:
+                                if token.form is not None:
+                                        s.add(token.form)
+                                k.add(token.upos)
+                            
+                for sentence in self.data_test:
                         for token in sentence:
                                 if token.form is not None:
                                         s.add(token.form)

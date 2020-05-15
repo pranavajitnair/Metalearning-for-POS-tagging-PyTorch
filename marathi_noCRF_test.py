@@ -98,6 +98,7 @@ marathi_train,marathi_test,hindi_train,hindi_test=load_sentences()
 tokens_dict,dict_token,n_tokens=get_tokens(marathi_train)
 
 marathi_train,marathi_test,marathi_train_tags,marathi_test_tags=get_sentences(marathi_train,marathi_test,tokens_dict,max_len)
+print(marathi_test_tags)
 
 model_marathi=gs.Word2Vec(marathi_test+marathi_train,min_count=1,size=hidden_size)
 
