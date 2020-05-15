@@ -1,3 +1,2 @@
-Implemented MAML(Model Agnostic Meta Learning) for POS tagging.
-The Two Languages used for this purpose are Hindi and Marathi.
-To run the code run the command python maml.py
+# Meta Learning for POS Tagging 
+Implementation of three Meta Learning approaches : MAML, Reptile and FOMAML for POS Tagging in PyTorch.
