@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
-from models import POSTagger
-from collections import OrderedDict
 import torch.optim as optim
+import torch.nn.functional as F
 
+from collections import OrderedDict
+
+from models import POSTagger
 
 class InnerLoop:
        def __init__(self,lossFunction,epochs,hidden_size,n_tokens,data_loader):
@@ -34,7 +36,7 @@ class InnerLoop:
            
             
 class CRF_BiLSTM(nn.Module):
-        def __init__(self,epochs,h_size,n_tokens,data_loader,token_dict):
+        def __init__(self,epochs,h_size,n_tokens,data_loader,token_dict,char_dict,n_chars):
                 super(CRF_BiLSTM,self).__init__()
                 
                 self.h_size=h_size
@@ -44,26 +46,63 @@ class CRF_BiLSTM(nn.Module):
                 self.start_token='START'
                 self.end_token='END'
                 self.token_dict=token_dict
+                self.char_dict=char_dict
+                self.n_chars=n_chars
+                
+                self.embeddings=nn.Embedding(self.n_chars,h_size*2)
+                nn.init.xavier_uniform_(self.embeddings.weight)
                 
                 self.transitions=nn.Parameter(torch.randn(self.n_tokens,self.n_tokens))
+                nn.init.xavier_uniform_(self.transitions.data)
+                
                 self.lstm=nn.LSTM(h_size,h_size,num_layers=1,bidirectional=True)
-                self.Dense1=nn.Linear(h_size*2,n_tokens)
+                
+                for name,weight in self.lstm.named_parameters():
+                        if 'weight' in name:
+                                nn.init.xavier_uniform_(weight)        
+                
+                self.Dense1=nn.Linear(h_size*2,self.n_tokens)
+                nn.init.xavier_uniform_(self.Dense1.weight)
                 
                 self.transitions.data[self.token_dict[self.start_token], :]=-10000.0
                 self.transitions.data[:,self.token_dict[self.end_token]]=-10000.0
+                
                 
         def argmax(vec):
                 _, idx=torch.max(vec,1)
                 
                 return idx.item()
                          
-        def get_lstm_feats(self,sentence,weights):
+        def get_lstm_feats(self,char_list,sentence,weights):
             
                 if weights:
                         self.load_state_dict(weights)
+
+                l=[]
+                sumlist=torch.ones((1,self.h_size*2)) #.cuda()
+                hidden=None
+                for char_number in char_list:
+                        if char_number==-1:
+                                sumlist=F.relu(sumlist) #test
+                                l.append(sumlist)
+                                sumlist=torch.ones((1,self.h_size*2)) #.cuda()  #256 good
+                                hidden=None
+                        else:
+                                embedding=(self.embeddings(torch.tensor(char_number)))**2 #.cuda()
+                                sumlist=sumlist*embedding
+                                
+                l=l[1:]
+                
                 output,hidden=self.lstm(sentence,None)
+                
+                for i in range(len(l)):
+                        em=l[i].squeeze()
+                        output[0][i]*=em
+                        
                 output=self.Dense1(output)
                 output=output.squeeze()
+                output=output.view(-1,self.n_tokens)
+
                 return output
         
         def log_sum_exp(self,vec):
@@ -75,7 +114,7 @@ class CRF_BiLSTM(nn.Module):
             
         def score_sentence(self,feats,tags):
                 score = torch.zeros(1) #.cuda()
-                tags = torch.cat([torch.tensor([self.token_dict[self.start_token]], dtype=torch.long), tags])   #.cuda()
+                tags = torch.cat([torch.tensor([self.token_dict[self.start_token]], dtype=torch.long), tags]) #.cuda() #.cuda()
                 for i, feat in enumerate(feats):
                         score = score + self.transitions[tags[i + 1], tags[i]] + feat[tags[i + 1]]
                 score = score + self.transitions[self.token_dict[self.end_token], tags[-1]]
@@ -84,7 +123,7 @@ class CRF_BiLSTM(nn.Module):
                 
         def forward_prop(self,feats):
             
-                init_alphas=torch.full((1,self.n_tokens),-10000.)  #.cuda()
+                init_alphas=torch.full((1,self.n_tokens),-10000.) #.cuda()
                 init_alphas[0][self.token_dict[self.start_token]]=0.
                 forward_var = init_alphas
                 
@@ -102,16 +141,16 @@ class CRF_BiLSTM(nn.Module):
                 
                 return alpha
                 
-        def neg_log_likelihood(self,sentence,tags,weights):
-                feats=self.get_lstm_feats(sentence,weights)
+        def neg_log_likelihood(self,char_list,sentence,tags,weights):
+                feats=self.get_lstm_feats(char_list,sentence,weights)
                 forward_score=self.forward_prop(feats)
                 gold_score=self.score_sentence(feats,tags)
                 
                 return forward_score-gold_score
             
-        def _viterbi_decode(self,feats):
+        def viterbi_decode(self,feats):
                 backpointers = []
-                init_vvars = torch.full((1, self.n_tokens), -10000.)  #.cuda()
+                init_vvars = torch.full((1, self.n_tokens), -10000.) #.cuda()
                 init_vvars[0][self.token_dict[self.start_token]] = 0
                 forward_var = init_vvars
                 for feat in feats:
@@ -125,7 +164,7 @@ class CRF_BiLSTM(nn.Module):
                                 bptrs_t.append(best_tag_id)
                                 viterbivars_t.append(next_tag_var[0][best_tag_id].view(1))
             
-                        forward_var = (torch.cat(viterbivars_t) + feat).view(1, -1)
+                        forward_var = (torch.cat(viterbivars_t) + feat).view(1, -1) #.cuda()
                         backpointers.append(bptrs_t)
         
                 terminal_var=forward_var + self.transitions[self.token_dict[self.end_token]]
@@ -145,29 +184,64 @@ class CRF_BiLSTM(nn.Module):
                 
                 return path_score, best_path
             
-        def train(self,weights):
-            
+        def train(self,weights,return_weights=False,return_grads=False):
+                weights_clone=self.clone_weights(weights)
+
                 for _ in range(self.epochs):
-                        sentence,tags=self.data_loader.load_next()
-                        loss=self.neg_log_likelihood(sentence,tags,weights)
+                        sentence,tags,sentence_text=self.data_loader.load_next()
+                        char_list=self.get_characters(sentence_text)
+                    
+                        loss=self.neg_log_likelihood(char_list,sentence,tags,weights_clone)
                         grads=torch.autograd.grad(loss,self.parameters(),create_graph=True)
-                        weights=OrderedDict((name, param - 0.0001*grad) for ((name, param), grad) in zip(weights.items(), grads))
                         
-                sentence,tags=self.data_loader.load_next()
-                loss=self.neg_log_likelihood(sentence,tags,weights)
+                        weights_clone=OrderedDict((name, param - 0.01*grad) for ((name, param), grad) in zip(weights_clone.items(),grads ))
+
+                if return_weights:
+                        meta_weights=OrderedDict((name,param) for (name,param) in self.named_parameters())
+                        return meta_weights,loss.item()
+
+                if return_grads:
+                        meta_weights=OrderedDict((name,grad) for ((name,param),grad) in zip(weights_clone.items(),grads ))
+                        return meta_weights,loss.item()
+
+                sentence,tags,sentence_text=self.data_loader.load_next()
+                char_list=self.get_characters(sentence_text)
+                
+                loss=self.neg_log_likelihood(char_list,sentence,tags,weights_clone)
+                
                 grads=torch.autograd.grad(loss,self.parameters(),create_graph=True)
                 meta_grads={name:g for ((name, _), g) in zip(self.named_parameters(), grads)}
                         
                 return meta_grads,loss
             
-        def forward(self,sentence):
-                lstm_feats=self.get_lstm_feats(sentence,None)
-                score,tag_seq=self._viterbi_decode(lstm_feats)
+        def forward(self,sentence,sentence_text):
+            
+                char_list=self.get_characters(sentence_text)
+                lstm_feats=self.get_lstm_feats(char_list,sentence,None)
+                score,tag_seq=self.viterbi_decode(lstm_feats)
                 
                 return score,tag_seq
             
-        def test_train(self,sentence,tags):
-                loss=self.neg_log_likelihood(sentence,tags,None)
+        def test_train(self,sentence_text,sentence,tags):
+                char_list=self.get_characters(sentence_text)
+                
+                loss=self.neg_log_likelihood(char_list,sentence,tags,None)
                 
                 return loss
             
+        def get_characters(self,sentence):
+                s=[]
+                s.append(-1)
+                for word in sentence:
+                        for character in word:
+                                s.append(self.char_dict[character])
+                        s.append(-1)
+                
+                return s
+            
+        def clone_weights(self,weights):
+                weights_clone=OrderedDict()
+                for name,_ in weights.items():
+                        weights_clone[name]=weights[name].clone()
+
+                return weights_clone
