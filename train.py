@@ -1,12 +1,21 @@
+import torch
 import torch.nn as nn
 
 import gensim.models as gs
 import argparse
+import os
 
 from data_loader import DataLoader,get_tokens,get_sentences,load_sentences,get_characters
 from maml import MetaLearn
 
+def resume_from_checkpoint(path):
+        pass
+
 def main(args):
+    
+        if args.resume_training:
+                resume_from_checkpoint(args.checkpoint_path)
+                
         lossFunction=nn.CrossEntropyLoss()
         
         hidden_size=args.hidden_size
@@ -36,6 +45,12 @@ def main(args):
         
         metaLearn=MetaLearn(hindi_data_loader,marathi_data_loader,lossFunction,hidden_size,epochs,inner_epoch,max_len,n_tokens,tokens_dict,dict_token,char_dict,n_chars,learning_rate)
         
+        if args.load_model:
+                metaLearn.load_state_dict(torch.load(args.path))
+                metaLearn.test(test_size_marathi,'marathi')
+                metaLearn.test(test_size_hindi,'hindi')
+                
+        
         if training_mode=='MAML':
                 metaLearn.train_MAML()
         elif training_mode=='Reptile':
@@ -59,6 +74,10 @@ def setup():
         parser.add_argument('--training_mode',type=str,default='MAML')
         parser.add_argument('--epsilon',type=float,default=1.0)
         parser.add_argument('--epochs',type=int,default=1200)
+        parser.add_argument('--load_model',type=bool,default=False)
+        parser.add_argument('--model_path',type=str,default=os.getcwd()+'pretrained/model.pth')
+        parser.add_argument('--checkpoint_path',type=str,default=os.getcwd()+'/checkpoints/model.pth')
+        parser.add_argument('--resume_training',type=bool,default=False)
         
         args=parser.parse_args()
         
