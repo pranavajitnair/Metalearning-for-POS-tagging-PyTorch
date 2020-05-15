@@ -1,20 +1,20 @@
-from inner_loop import CRF_BiLSTM
-import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
+
 from collections import OrderedDict
-import gensim.models as gs
-from data_loader import DataLoader,get_tokens,get_sentences,load_sentences
+
+from inner_loop import CRF_BiLSTM
+
+
                         
-class MetaLearn:
-        def __init__(self,hindi_data_loader,marathi_data_loader,lossFunction,hidden_size,epochs,inner_epoch,max_len,n_tokens,tokens_dict,dict_token):
+class MetaLearn(object):
+        def __init__(self,hindi_data_loader,marathi_data_loader,lossFunction,hidden_size,epochs,inner_epoch,max_len,n_tokens,tokens_dict,dict_token,char_dict,n_chars):
                 
-                self.hindi=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,hindi_data_loader,tokens_dict) #.cuda()
-                self.marathi=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,marathi_data_loader,tokens_dict) #.cuda()
+                self.hindi=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,hindi_data_loader,tokens_dict,char_dict,n_chars) #.cuda()
+                self.marathi=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,marathi_data_loader,tokens_dict,char_dict,n_chars) #.cuda()
                 self.hidden_size=hidden_size
                 self.epochs=epochs
-                self.encoder=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,marathi_data_loader,tokens_dict) #.cuda()
-                self.optimizer=optim.Adam(self.encoder.parameters(),lr=0.001)
+                self.encoder=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,marathi_data_loader,tokens_dict,char_dict,n_chars) #.cuda()
+                self.optimizer=optim.Adam(self.encoder.parameters(),lr=0.01)
                 self.lossFunction=lossFunction
                 self.max_len=max_len
                 self.inner_epoch=inner_epoch
@@ -24,9 +24,12 @@ class MetaLearn:
                 
         def meta_update1(self,grads,print_epoch):
               
-                x_val,y_val=self.marathi.data_loader.load_next()
-               
-                loss=self.encoder.test_train(x_val,y_val)
+                x_val,y_val,sentence_text=self.marathi.data_loader.load_next()
+                x,y,sentence=self.hindi.data_loader.load_next()
+
+                loss1=self.encoder.test_train(sentence,x,y)
+                loss=self.encoder.test_train(sentence_text,x_val,y_val)
+                loss=loss+loss1
                 
                 hooks = []
                 for (k,v) in self.encoder.named_parameters():
@@ -36,9 +39,10 @@ class MetaLearn:
                                         return grads[key]
                                 return replace_grad
                         hooks.append(v.register_hook(get_closure()))
+                        
                 self.optimizer.zero_grad()        
                 loss.backward()
-                print(str(print_epoch)+" "+str(loss.item()))
+                print('epoch=',print_epoch+1,"training loss=",str(loss.item()))
                 self.optimizer.step()
 
                 for h in hooks:
@@ -50,117 +54,79 @@ class MetaLearn:
                 print(str(print_epoch)+" "+str(loss.item()))
                 self.optimizer.step()
                 
-        def train(self):
+        def train_MAML(self):
                 for epoch in range(self.epochs):
                         fast_weights=OrderedDict((name,param) for (name,param) in self.encoder.named_parameters())
                         ls=[]
+
                         grad1,loss1=self.marathi.train(fast_weights)
                         grad2,loss2=self.hindi.train(fast_weights)
+
                         ls.append(grad1)
                         ls.append(grad2)
+
                         grads={k: sum(d[k] for d in ls) for k in ls[0].keys()}
                         
                         self.meta_update1(grads,epoch)
                         #self.meta_update2(loss1+loss2,epoch)
                         
-        def test(self,t):
-                for _ in range(t,self.inner_epoch+t):
-                        x_test,y_test,sentence=self.marathi.data_loader.load_next_test()
-                        output,hidden=self.encoder(x_test)
-                        loss=self.lossFunction(output,y_test)
-                        self.optimizer.zero_grad()
-                        loss.backward()
-                        self.optimizer.step()
+        def train_Reptile(self,epsilon):
+                for epoch in range(self.epochs):
+                        fast_weights=OrderedDict((name,param) for (name,param) in self.encoder.named_parameters())
                         
-                for _ in range(t):
-                        x_test,y_test,sentence1=self.marathi.data_loader.load_next_test()
-                        output,hidden=self.encoder(x_test)
-                        output=F.softmax(output,dim=1)
-                        
-                        j=0
-                        sentence=''
-                        s=''
-                        spredict=''
+                        weights_hindi,loss1=self.hindi.train(fast_weights,True,False)
+                        weights_marathi,loss2=self.marathi.train(fast_weights,True,False)
 
-                        outputprime=[]
-                        for k in range(self.max_len):
-                                ma=0
-                                cal=0
-                                for j in range(self.n_tokens):
-                                        if output[k][j]>ma:
-                                            ma=output[k][j]
-                                            cal=j
-                                outputprime.append(cal)
-                                
-                        j=0
-                        count=0
-                        while sentence1[j]!='EOS':
-                                s=s+self.index_to_token[int(y_test[j])]+' '
-                                sentence=sentence+sentence1[j]+' '
-                                spredict=spredict+self.index_to_token[outputprime[j]]+' '
-                                if self.index_to_token[outputprime[j]]==self.index_to_token[int(y_test[j])]:
-                                        count+=1
-                                j+=1
-                                
-                        print(sentence)
-                        print(s)
-                        print(spredict)
-                        print('Accuracy= '+str(100*count/j)+'%')
-                        print('')
+                        for name,param in self.encoder.named_parameters():
+                                param=param+epsilon*(weights_hindi[name]+weights_marathi[name]-2*param)
+
+                        print('epoch=',epoch+1,'training loss=',loss1+loss2)
                         
-        def test2(self,t):
-                for _ in range(t,t+self.inner_epoch):
-                        x_test,y_test,sentence=self.marathi.data_loader.load_next_test()
-                        loss=self.encoder.test_train(x_test,y_test)
+        def train_FOMAML(self):
+                for epoch in range(self.epochs):
+                        fast_weights=OrderedDict((name,param) for (name,param) in self.encoder.named_parameters())
+                        
+                        weights_hindi,loss1=self.hindi.train(fast_weights,False,True)
+                        weights_marathi,loss2=self.marathi.train(fast_weights,False,True)
+
+                        for name,param in self.encoder.named_parameters():
+                                param=param-0.1*(weights_hindi[name]+weights_marathi[name])
+
+                        print('epoch=',epoch+1,'training loss=',loss1+loss2)
+                        
+        def test(self,t,lang):
+                for _ in range(self.inner_epoch):
+                        if lang=='marathi':
+                                x_test,y_test,sentence=self.marathi.data_loader.load_next()
+                        else:
+                                x_test,y_test,sentence=self.hindi.data_loader.load_next()
+                                
+                        loss=self.encoder.test_train(sentence,x_test,y_test)
                         loss.backward()
                         self.optimizer.step()
                 
+                a=0
+                b=0
+                c=0
                 for _ in range(t):
-                        x_test,y_test,sentence1=self.marathi.data_loader.load_next_test()
-                        score,outputprime=self.encoder.forward(x_test)
+                        if lang=='marathi': 
+                                x_test,y_test,sentence1=self.marathi.data_loader.load_next_test()
+                        else:        
+                                x_test,y_test,sentence1=self.hindi.data_loader.load_next_test()
+                                
+                        score,outputprime=self.encoder.forward(x_test,sentence1)
                         
                         j=0
                         count=0
-                        sentence=''
-                        s=''
-                        spredict=''
-                        
-                        while sentence1[j]!='EOS':
-                                s=s+self.index_to_token[int(y_test[j])]+' '
-                                sentence=sentence+sentence1[j]+' '
-                                spredict=spredict+self.index_to_token[outputprime[j]]+' '
-                                if self.index_to_token[outputprime[j]]==self.index_to_token[int(y_test[j])]:
+                        for i in range(len(sentence1)):
+                                c+=1                            
+                                if outputprime[j]==y_test[j]:
                                         count+=1
+                                        b+=1
                                 j+=1
-                                
-                        print(sentence)
-                        print(s)
-                        print(spredict)
-                        print('Accuracy= '+str(100*count/j)+'%')
-                        print('')
                         
+                        accuracy=100*count/j
+                        a+=accuracy
                         
-    
-lossFunction=nn.CrossEntropyLoss()
-hidden_size=1024
-epochs=20
-inner_epoch=15
-test_size=47
-max_len=116
-
-marathi_train,marathi_test,hindi_train,hindi_test=load_sentences()
-tokens_dict,dict_token,n_tokens=get_tokens(marathi_train)
-
-marathi_train,marathi_test,marathi_train_tags,marathi_test_tags=get_sentences(marathi_train,marathi_test,tokens_dict,max_len)
-hindi_train,hindi_test,hindi_train_tags,hindi_test_tags=get_sentences(hindi_train,hindi_test,tokens_dict,max_len)
-
-model_hindi=gs.Word2Vec(hindi_train+hindi_test,min_count=1,size=hidden_size)
-model_marathi=gs.Word2Vec(marathi_test+marathi_train,min_count=1,size=hidden_size)
-
-hindi_data_loader=DataLoader(hindi_train,hindi_test,hindi_train_tags,hindi_test_tags,max_len,model_hindi)
-marathi_data_loader=DataLoader(marathi_train,marathi_test,marathi_train_tags,marathi_test_tags,max_len,model_marathi)
-
-
-metaLearn=MetaLearn(hindi_data_loader,marathi_data_loader,lossFunction,hidden_size,epochs,inner_epoch,max_len,n_tokens,tokens_dict,dict_token)
-metaLearn.train()
-metaLearn.test2(test_size)   
+                print(a/t)
+                print(b*100/c)
