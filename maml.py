@@ -7,14 +7,14 @@ from inner_loop import CRF_BiLSTM
 
                         
 class MetaLearn(object):
-        def __init__(self,hindi_data_loader,marathi_data_loader,lossFunction,hidden_size,epochs,inner_epoch,max_len,n_tokens,tokens_dict,dict_token,char_dict,n_chars):
+        def __init__(self,hindi_data_loader,marathi_data_loader,lossFunction,hidden_size,epochs,inner_epoch,max_len,n_tokens,tokens_dict,dict_token,char_dict,n_chars,learning_rate):
                 
                 self.hindi=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,hindi_data_loader,tokens_dict,char_dict,n_chars) #.cuda()
                 self.marathi=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,marathi_data_loader,tokens_dict,char_dict,n_chars) #.cuda()
                 self.hidden_size=hidden_size
                 self.epochs=epochs
                 self.encoder=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,marathi_data_loader,tokens_dict,char_dict,n_chars) #.cuda()
-                self.optimizer=optim.Adam(self.encoder.parameters(),lr=0.01)
+                self.optimizer=optim.Adam(self.encoder.parameters(),lr=learning_rate)
                 self.lossFunction=lossFunction
                 self.max_len=max_len
                 self.inner_epoch=inner_epoch

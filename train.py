@@ -12,6 +12,7 @@ def main(args):
         hidden_size=args.hidden_size
         epsilon=args.epsilon
         training_mode=args.training_mode
+        learning_rate=args.learning_rate
         
         epochs=args.epochs
         inner_epoch=args.N_shot_learning
