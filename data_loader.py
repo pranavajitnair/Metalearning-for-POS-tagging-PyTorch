@@ -37,7 +37,7 @@ def get_sentences(sentences_train,sentences_test,tags,max_len):
 #                        t.append(tags['X'])
                 sentences_for_train.append(k)
                 tags_for_train.append(t)
-
+                
         for sentence in sentences_test:
                 k=[]
                 t=[]

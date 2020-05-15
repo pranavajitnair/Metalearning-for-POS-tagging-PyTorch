@@ -60,19 +60,19 @@ class CRF_BiLSTM(nn.Module):
                 self.n_chars=n_chars
                 
                 self.embeddings=nn.Embedding(self.n_chars,h_size*2)
-                nn.init.xavier_normal_(self.embeddings.weight)
+                nn.init.xavier_uniform_(self.embeddings.weight)
                 
                 self.transitions=nn.Parameter(torch.randn(self.n_tokens,self.n_tokens))
-                nn.init.xavier_normal_(self.transitions.data)
+                nn.init.xavier_uniform_(self.transitions.data)
                 
                 self.lstm=nn.LSTM(h_size,h_size,num_layers=1,bidirectional=True)
                 
                 for name,weight in self.lstm.named_parameters():
                         if 'weight' in name:
-                                nn.init.xavier_normal_(weight)
+                                nn.init.xavier_uniform_(weight)        
                 
                 self.Dense1=nn.Linear(h_size*2,self.n_tokens)
-                nn.init.xavier_normal_(self.Dense1.weight)
+                nn.init.xavier_uniform_(self.Dense1.weight)
                 
                 self.transitions.data[self.token_dict[self.start_token], :]=-10000.0
                 self.transitions.data[:,self.token_dict[self.end_token]]=-10000.0
@@ -100,7 +100,7 @@ class CRF_BiLSTM(nn.Module):
                                 sumlist*=embedding
                                 
                 l=l[1:]
-               
+                
                 output,hidden=self.lstm(sentence,None)
 
                 for i in range(len(l)):
@@ -223,6 +223,8 @@ class CRF_BiLSTM(nn.Module):
             
         def test(self):
                 a=0
+                b=0
+                c=0
                 for _ in range(47):
                     
                         sentence,tags,sentence_text=self.data_loader.load_next_test()
@@ -235,11 +237,13 @@ class CRF_BiLSTM(nn.Module):
                         s3=''
                         
                         for _ in range(len(sentence_text)):
+                                c+=1
                                 s1+=sentence_text[j]+' '
                                 s2+=dict_token[tag_seq[j]]+' '
                                 s3+=dict_token[int(tags[j])]+' '
                                 if tag_seq[j]==tags[j]:
                                         count+=1
+                                        b+=1
                                 j+=1
                                 
                         accuracy=100*(count/(j))
@@ -251,6 +255,7 @@ class CRF_BiLSTM(nn.Module):
                         
                 print()
                 print(a/47)
+                print(100*b/c)
             
 
 max_len=116
