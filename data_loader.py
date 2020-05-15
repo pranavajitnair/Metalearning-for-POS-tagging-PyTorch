@@ -1,13 +1,15 @@
 import pyconll
 import os
+
 import torch
+
 from functions import preprocess_2
 
 def load_sentences():
-        hindi_train=os.getcwd()+'/hi_hdtb-ud-train.conllu'
-        marathi_train=os.getcwd()+'/mr_ufal-ud-train.conllu'
-        marathi_test=os.getcwd()+'/mr_ufal-ud-test.conllu'
-        hindi_test=os.getcwd()+'/hi_hdtb-ud-test.conllu'
+        hindi_train=os.getcwd()+'/Data/hi_hdtb-ud-train.conllu'
+        marathi_train=os.getcwd()+'/Data/mr_ufal-ud-train.conllu'
+        marathi_test=os.getcwd()+'/Data/mr_ufal-ud-test.conllu'
+        hindi_test=os.getcwd()+'/Data/hi_hdtb-ud-test.conllu'
         
         sentences_marathi_train=preprocess_2(pyconll.load_from_file(marathi_train))
         sentences_marathi_test=preprocess_2(pyconll.load_from_file(marathi_test))
@@ -28,7 +30,10 @@ def get_sentences(sentences_train,sentences_test,tags,max_len):
                 t=[]
                 for token in sentence:
                         if token.form is not None:
-                                k.append(token.form)
+                                if token.form=='।':
+                                        k.append('.')
+                                else:
+                                        k.append(token.form)
                                 t.append(tags[token.upos])
 #                k.append('EOS')
 #                t.append(tags['X'])
@@ -45,6 +50,8 @@ def get_sentences(sentences_train,sentences_test,tags,max_len):
                         if token.form is not None:
                                 if token.form=="'":
                                         k.append('"')
+                                elif token.form=='।':
+                                        k.append('.')
                                 else:
                                         k.append(token.form)      
                                 t.append(tags[token.upos])
@@ -109,9 +116,9 @@ class DataLoader(object):
                 for token in sentence:
                         l.append(self.model[token])
                         
-                embedding=torch.tensor(l).view(1,len(sentence),-1)  #.cuda()
+                embedding=torch.tensor(l).view(1,len(sentence),-1) #.cuda()
                 self.train_number=(self.train_number+1)%len(self.train)
-                tags=torch.tensor(tags)  #.cuda()
+                tags=torch.tensor(tags) #.cuda()
                 
                 return embedding,tags,sentence
             
@@ -123,8 +130,8 @@ class DataLoader(object):
                 for token in sentence:
                         l.append(self.model[token])
                         
-                embedding=torch.tensor(l).view(1,len(sentence),-1)
+                embedding=torch.tensor(l).view(1,len(sentence),-1) #.cuda()
                 self.test_number=(self.test_number+1)%len(self.test)
-                tags=torch.tensor(tags)
+                tags=torch.tensor(tags) #.cuda()
                 
                 return embedding,tags,sentence
