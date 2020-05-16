@@ -8,13 +8,24 @@ import os
 from data_loader import DataLoader,get_tokens,get_sentences,load_sentences,get_characters
 from maml import MetaLearn
 
-def resume_from_checkpoint(path):
-        pass
+def resume_from_checkpoint(path,training_type):
+        model=torch.load(path)
+        metaLearner=MetaLearn(model['dataloader_hindi'],model['dataloader_marathi'],nn.CrossEntropyLoss(),
+                              model['hidden_size'],model['epochs'],model['inner_epoch'],
+                              model['max_len'],model['n_tokens'],model['token_to_index'],model['index_to_token'],
+                              model['char_dict'],model['n_chars'],model['learning_rate'])
+        
+        if training_type=='MAML':
+                metaLearner.train_MAML()
+        if training_type=='Reptile':
+                metaLearner.train_Reptile(model['epsiolon'])
+        if training_type=='FOMAML':
+                metaLearner.train_FOMAML()     
 
 def main(args):
     
         if args.resume_training:
-                resume_from_checkpoint(args.checkpoint_path)
+                resume_from_checkpoint(args.checkpoint_path,args.resume_training_type)
                 
         lossFunction=nn.CrossEntropyLoss()
         
@@ -48,8 +59,7 @@ def main(args):
         if args.load_model:
                 metaLearn.load_state_dict(torch.load(args.path))
                 metaLearn.test(test_size_marathi,'marathi')
-                metaLearn.test(test_size_hindi,'hindi')
-                
+                metaLearn.test(test_size_hindi,'hindi')           
         
         if training_mode=='MAML':
                 metaLearn.train_MAML()
@@ -77,6 +87,7 @@ def setup():
         parser.add_argument('--load_model',type=bool,default=False)
         parser.add_argument('--model_path',type=str,default=os.getcwd()+'pretrained/model.pth')
         parser.add_argument('--checkpoint_path',type=str,default=os.getcwd()+'/checkpoints/model.pth')
+        parser.add_argument('--resume_training_type',type=str,default='MAML')
         parser.add_argument('--resume_training',type=bool,default=False)
         
         args=parser.parse_args()

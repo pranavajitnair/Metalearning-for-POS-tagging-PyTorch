@@ -1,9 +1,10 @@
+import torch
 import torch.optim as optim
 
 from collections import OrderedDict
+import os
 
 from inner_loop import CRF_BiLSTM
-
 
                         
 class MetaLearn(object):
@@ -12,15 +13,20 @@ class MetaLearn(object):
                 self.hindi=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,hindi_data_loader,tokens_dict,char_dict,n_chars) #.cuda()
                 self.marathi=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,marathi_data_loader,tokens_dict,char_dict,n_chars) #.cuda()
                 self.hidden_size=hidden_size
+                
                 self.epochs=epochs
                 self.encoder=CRF_BiLSTM(inner_epoch,hidden_size,n_tokens,marathi_data_loader,tokens_dict,char_dict,n_chars) #.cuda()
                 self.optimizer=optim.Adam(self.encoder.parameters(),lr=learning_rate)
                 self.lossFunction=lossFunction
+                
                 self.max_len=max_len
                 self.inner_epoch=inner_epoch
                 self.n_tokens=n_tokens
                 self.token_to_index=tokens_dict
                 self.index_to_token=dict_token
+                self.char_dict=char_dict
+                self.n_chars=n_chars
+                self.learning_rate=learning_rate
                 
         def meta_update1(self,grads,print_epoch):
               
@@ -130,3 +136,21 @@ class MetaLearn(object):
                         
                 print(a/t)
                 print(b*100/c)
+                
+        def store_checkpoint(self,finished_epochs,epsilon=None):
+                dict={}
+                dict['epochs']=self.epochs-finished_epochs
+                dict['model']=self.encoder.state_dict()
+                dict['dataloader_hindi']=self.hindi.data_loader
+                dict['dataloader_marathi']=self.marathi.data_loader
+                dict['n_tokens']=self.n_tokens
+                dict['token_to_index']=self.token_to_index
+                dict['index_to_token']=self.index_to_token
+                dict['max_len']=self.max_len
+                dict['hidden_size']=self.hidden_size
+                dict['char_dict']=self.char_dict
+                dict['learning_rate']=self.learning_rate
+                dict['n_chars']=self.n_chars
+                dict['inner_epoch']=self.inner_epoch
+                dict['epsilon']=epsilon
+                torch.save(dict,os.getcwd()+'/checkpoints/model.pth')
