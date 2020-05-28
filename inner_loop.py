@@ -1,11 +1,9 @@
 import torch
 import torch.nn as nn
+from collections import OrderedDict
 import torch.optim as optim
 import torch.nn.functional as F
 
-from collections import OrderedDict
-
-from models import POSTagger
 
 class InnerLoop:
        def __init__(self,lossFunction,epochs,hidden_size,n_tokens,data_loader):
@@ -48,25 +46,30 @@ class CRF_BiLSTM(nn.Module):
                 self.token_dict=token_dict
                 self.char_dict=char_dict
                 self.n_chars=n_chars
+                self.char_dim=17
                 
-                self.embeddings=nn.Embedding(self.n_chars,h_size*2)
+                self.embeddings=nn.Embedding(self.n_chars,self.char_dim)
                 nn.init.xavier_uniform_(self.embeddings.weight)
                 
                 self.transitions=nn.Parameter(torch.randn(self.n_tokens,self.n_tokens))
                 nn.init.xavier_uniform_(self.transitions.data)
                 
-                self.lstm=nn.LSTM(h_size,h_size,num_layers=1,bidirectional=True)
+                self.lstm=nn.LSTM(h_size,h_size,num_layers=1,bidirectional=True,batch_first=True,dropout=0.2)
                 
                 for name,weight in self.lstm.named_parameters():
                         if 'weight' in name:
                                 nn.init.xavier_uniform_(weight)        
                 
-                self.Dense1=nn.Linear(h_size*2,self.n_tokens)
+                self.Dense1=nn.Linear(h_size*4,self.n_tokens)
                 nn.init.xavier_uniform_(self.Dense1.weight)
                 
                 self.transitions.data[self.token_dict[self.start_token], :]=-10000.0
                 self.transitions.data[:,self.token_dict[self.end_token]]=-10000.0
-                
+
+                self.conv1=nn.Conv1d(self.char_dim,64,2)
+                self.conv2=nn.Conv1d(self.char_dim,64,2)
+                self.conv3=nn.Conv1d(self.char_dim,64,3)
+                self.conv4=nn.Conv1d(self.char_dim,64,3)                
                 
         def argmax(vec):
                 _, idx=torch.max(vec,1)
@@ -78,26 +81,44 @@ class CRF_BiLSTM(nn.Module):
                 if weights:
                         self.load_state_dict(weights)
 
-                l=[]
-                sumlist=torch.ones((1,self.h_size*2)) #.cuda()
-                hidden=None
-                for char_number in char_list:
-                        if char_number==-1:
-                                sumlist=F.relu(sumlist) #test
-                                l.append(sumlist)
-                                sumlist=torch.ones((1,self.h_size*2)) #.cuda()  #256 good
-                                hidden=None
-                        else:
-                                embedding=(self.embeddings(torch.tensor(char_number)))**2 #.cuda()
-                                sumlist=sumlist*embedding
+                # l=[]
+                # sumlist=torch.ones((1,2*self.h_size)) #.cuda()
+                # hidden=None
+                # for char_number in char_list:
+                #         if char_number==-1:
+                #                 sumlist=F.relu(sumlist) #test
+                #                 l.append(sumlist)
+                #                 sumlist=torch.ones((1,2*self.h_size)) #.cuda()  #256 good
+                #                 hidden=None
+                #         else:
+                #                 embedding=(self.embeddings(torch.tensor(char_number)))**2 #.cuda()
+                #                 sumlist=sumlist*embedding
                                 
-                l=l[1:]
+                # l=l[1:]
+                # l=torch.cat(l,dim=-2).unsqueeze(0)
+
+                char_list=torch.tensor(char_list)
+                char_embeds=self.embeddings(char_list).view(sentence.shape[1],-1,self.char_dim).transpose(1,2)
+
+                o1=self.conv1(char_embeds)
+                o2=self.conv2(char_embeds)
+                o3=self.conv3(char_embeds)
+                o4=self.conv4(char_embeds)
+
+                o1,_=torch.max(o1,dim=-1)
+                o2,_=torch.max(o2,dim=-1)
+                o3,_=torch.max(o3,dim=-1)
+                o4,_=torch.max(o4,dim=-1)
+
+                l=torch.cat([o1,o2,o3,o4],dim=-1).unsqueeze(0)
                 
+                # sentence=torch.cat((sentence,l),dim=-1)
                 output,hidden=self.lstm(sentence,None)
+                output=torch.cat([output,sentence,l],dim=-1)
                 
-                for i in range(len(l)):
-                        em=l[i].squeeze()
-                        output[0][i]*=em
+                # for i in range(len(l)):
+                #         em=l[i].squeeze()
+                #         output[0][i]*=em
                         
                 output=self.Dense1(output)
                 output=output.squeeze()
@@ -141,7 +162,7 @@ class CRF_BiLSTM(nn.Module):
                 
                 return alpha
                 
-        def neg_log_likelihood(self,char_list,sentence,tags,weights):
+        def neg_log_likelihood(self,char_list,sentence,tags,weights=None):
                 feats=self.get_lstm_feats(char_list,sentence,weights)
                 forward_score=self.forward_prop(feats)
                 gold_score=self.score_sentence(feats,tags)
@@ -186,19 +207,20 @@ class CRF_BiLSTM(nn.Module):
             
         def train(self,weights,return_weights=False,return_grads=False):
                 weights_clone=self.clone_weights(weights)
-
+                self.load_state_dict(weights_clone)
+                loss=0
                 for _ in range(self.epochs):
                         sentence,tags,sentence_text=self.data_loader.load_next()
                         char_list=self.get_characters(sentence_text)
-                    
-                        loss=self.neg_log_likelihood(char_list,sentence,tags,weights_clone)
-                        grads=torch.autograd.grad(loss,self.parameters(),create_graph=True)
+                        loss+=self.neg_log_likelihood(char_list,sentence,tags) #,weights_clone
                         
-                        weights_clone=OrderedDict((name, param - 0.01*grad) for ((name, param), grad) in zip(weights_clone.items(),grads ))
+                grads=torch.autograd.grad(loss,self.parameters(),create_graph=True)
+                
+                weights_clone=OrderedDict((name, param - 0.01*grad) for ((name, param), grad) in zip(weights_clone.items(),grads ))
 
                 if return_weights:
-                        meta_weights=OrderedDict((name,param) for (name,param) in self.named_parameters())
-                        return meta_weights,loss.item()
+  
+                        return weights_clone,loss.item()
 
                 if return_grads:
                         meta_weights=OrderedDict((name,grad) for ((name,param),grad) in zip(weights_clone.items(),grads ))
@@ -207,7 +229,7 @@ class CRF_BiLSTM(nn.Module):
                 sentence,tags,sentence_text=self.data_loader.load_next()
                 char_list=self.get_characters(sentence_text)
                 
-                loss=self.neg_log_likelihood(char_list,sentence,tags,weights_clone)
+                loss=self.neg_log_likelihood(char_list,sentence,tags) #,weights_clone
                 
                 grads=torch.autograd.grad(loss,self.parameters(),create_graph=True)
                 meta_grads={name:g for ((name, _), g) in zip(self.named_parameters(), grads)}
@@ -230,12 +252,21 @@ class CRF_BiLSTM(nn.Module):
                 return loss
             
         def get_characters(self,sentence):
-                s=[]
-                s.append(-1)
+                max1=0
                 for word in sentence:
+                        max1=max(max1,len(word))
+
+                s=[]
+                # s.append(-1)
+                for word in sentence:
+                        char_list=[]
                         for character in word:
-                                s.append(self.char_dict[character])
-                        s.append(-1)
+                                char_list.append(self.char_dict[character])
+                                # s.append(self.char_dict[character])
+                        for _ in range(max1-len(word)):
+                                char_list.append(self.char_dict['pad'])
+                        s.append(char_list)
+                        # s.append(-1)
                 
                 return s
             
