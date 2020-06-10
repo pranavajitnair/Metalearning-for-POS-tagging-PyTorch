@@ -1,45 +1,16 @@
 import torch
 import torch.nn as nn
+
 from collections import OrderedDict
-import torch.optim as optim
-import torch.nn.functional as F
 
-
-class InnerLoop:
-       def __init__(self,lossFunction,epochs,hidden_size,n_tokens,data_loader):
-            
-               self.lossFunction=lossFunction
-               self.encoder=POSTagger(hidden_size,n_tokens)
-               self.epochs=epochs
-               self.optimizer=optim.SGD(self.encoder.parameters(),lr=0.01)
-               self.data_loader=data_loader
-                           
-       def train(self,weights):
-               for j in range(self.epochs):
-                       self.encoder.load_state_dict(weights)
-                       sentence,tags=self.data_loader.load_next()
-                       output,_=self.encoder(sentence)
-                       loss=self.lossFunction(output,tags)
-                       grads=torch.autograd.grad(loss,self.encoder.parameters(),create_graph=True)
-                       weights=OrderedDict((name, param - 0.01*grad) for ((name, param), grad) in zip(weights.items(), grads))
-                       
-               self.encoder.load_state_dict(weights)
-               sentence,tags=self.data_loader.load_next()
-               output,_=self.encoder(sentence)
-               loss=self.lossFunction(output,tags)
-               grads=torch.autograd.grad(loss,self.encoder.parameters(),create_graph=True)
-               meta_grads={name:g for ((name, _), g) in zip(self.encoder.named_parameters(), grads)}
-                       
-               return meta_grads,loss
-           
             
 class CRF_BiLSTM(nn.Module):
-        def __init__(self,epochs,h_size,n_tokens,data_loader,token_dict,char_dict,n_chars):
+        def __init__(self,epochs,h_size,n_tokens,token_dict,char_dict,n_chars):
                 super(CRF_BiLSTM,self).__init__()
                 
                 self.h_size=h_size
                 self.n_tokens=n_tokens
-                self.data_loader=data_loader
+               
                 self.epochs=epochs
                 self.start_token='START'
                 self.end_token='END'
@@ -81,22 +52,6 @@ class CRF_BiLSTM(nn.Module):
                 if weights:
                         self.load_state_dict(weights)
 
-                # l=[]
-                # sumlist=torch.ones((1,2*self.h_size)) #.cuda()
-                # hidden=None
-                # for char_number in char_list:
-                #         if char_number==-1:
-                #                 sumlist=F.relu(sumlist) #test
-                #                 l.append(sumlist)
-                #                 sumlist=torch.ones((1,2*self.h_size)) #.cuda()  #256 good
-                #                 hidden=None
-                #         else:
-                #                 embedding=(self.embeddings(torch.tensor(char_number)))**2 #.cuda()
-                #                 sumlist=sumlist*embedding
-                                
-                # l=l[1:]
-                # l=torch.cat(l,dim=-2).unsqueeze(0)
-
                 char_list=torch.tensor(char_list)
                 char_embeds=self.embeddings(char_list).view(sentence.shape[1],-1,self.char_dim).transpose(1,2)
 
@@ -112,13 +67,8 @@ class CRF_BiLSTM(nn.Module):
 
                 l=torch.cat([o1,o2,o3,o4],dim=-1).unsqueeze(0)
                 
-                # sentence=torch.cat((sentence,l),dim=-1)
                 output,hidden=self.lstm(sentence,None)
                 output=torch.cat([output,sentence,l],dim=-1)
-                
-                # for i in range(len(l)):
-                #         em=l[i].squeeze()
-                #         output[0][i]*=em
                         
                 output=self.Dense1(output)
                 output=output.squeeze()
@@ -205,18 +155,20 @@ class CRF_BiLSTM(nn.Module):
                 
                 return path_score, best_path
             
-        def train(self,weights,return_weights=False,return_grads=False):
+        def train(self,weights,data_loader,N,K,return_weights=False,return_grads=False):
                 weights_clone=self.clone_weights(weights)
                 self.load_state_dict(weights_clone)
-                loss=0
-                for _ in range(self.epochs):
-                        sentence,tags,sentence_text=self.data_loader.load_next()
-                        char_list=self.get_characters(sentence_text)
-                        loss+=self.neg_log_likelihood(char_list,sentence,tags) #,weights_clone
-                        
-                grads=torch.autograd.grad(loss,self.parameters(),create_graph=True)
                 
-                weights_clone=OrderedDict((name, param - 0.01*grad) for ((name, param), grad) in zip(weights_clone.items(),grads ))
+                for _ in range(self.epochs):
+                        loss=0
+                        for _ in range(N*K):
+                                 sentence,tags,sentence_text=data_loader.load_next(reuse=True)
+                                 char_list=self.get_characters(sentence_text)
+                                 loss+=self.neg_log_likelihood(char_list,sentence,tags) #,weights_clone
+                        
+                        grads=torch.autograd.grad(loss,self.parameters(),create_graph=True)
+                        
+                        weights_clone=OrderedDict((name, param - 0.01*grad) for ((name, param), grad) in zip(weights_clone.items(),grads ))
 
                 if return_weights:
   
@@ -226,10 +178,13 @@ class CRF_BiLSTM(nn.Module):
                         meta_weights=OrderedDict((name,grad) for ((name,param),grad) in zip(weights_clone.items(),grads ))
                         return meta_weights,loss.item()
 
-                sentence,tags,sentence_text=self.data_loader.load_next()
-                char_list=self.get_characters(sentence_text)
-                
-                loss=self.neg_log_likelihood(char_list,sentence,tags) #,weights_clone
+                loss=0
+                data_loader.set_counter()
+                for _ in range(N*K):
+                        sentence,tags,sentence_text=data_loader.load_next()
+                        char_list=self.get_characters(sentence_text)
+                        
+                        loss+=self.neg_log_likelihood(char_list,sentence,tags) #,weights_clone
                 
                 grads=torch.autograd.grad(loss,self.parameters(),create_graph=True)
                 meta_grads={name:g for ((name, _), g) in zip(self.named_parameters(), grads)}
@@ -255,6 +210,7 @@ class CRF_BiLSTM(nn.Module):
                 max1=0
                 for word in sentence:
                         max1=max(max1,len(word))
+                max1=max(max1,5)
 
                 s=[]
                 # s.append(-1)
@@ -276,3 +232,7 @@ class CRF_BiLSTM(nn.Module):
                         weights_clone[name]=weights[name].clone()
 
                 return weights_clone
+
+        def clone_weights_for_test(self,weights):
+                weights_clone=self.clone_weights(weights)
+                self.load_state_dict(weights_clone)
