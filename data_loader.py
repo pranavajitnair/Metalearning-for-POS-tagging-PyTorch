@@ -1,28 +1,38 @@
 import pyconll
 import os
-
 import torch
-
 from functions import preprocess_2
 
 def load_sentences():
-        hindi_train=os.getcwd()+'/Data/hi_hdtb-ud-train.conllu'
-        marathi_train=os.getcwd()+'/Data/mr_ufal-ud-train.conllu'
-        marathi_test=os.getcwd()+'/Data/mr_ufal-ud-test.conllu'
-        hindi_test=os.getcwd()+'/Data/hi_hdtb-ud-test.conllu'
+        hindi_train=os.getcwd()+'/hi_hdtb-ud-train.conllu'
+        marathi_train=os.getcwd()+'/mr_ufal-ud-train.conllu'
+        marathi_test=os.getcwd()+'/mr_ufal-ud-test.conllu'
+        marathi_dev=os.getcwd()+'/mr_ufal-ud-dev.conllu'
+        bhojpuri_train=os.getcwd()+'/bho_bhtb-ud-test.conllu'
+        magahi_train=os.getcwd()+'/mag_mgtb-ud-test.conllu'
+        sanskrit_train=os.getcwd()+'/sa_ufal-ud-test.conllu'
+        english_train=os.getcwd()+'/en_gum-ud-dev.conllu'
+        german_train=os.getcwd()+'/de_hdt-ud-dev.conllu'
+        dutch_train=os.getcwd()+'/nl_lassysmall-ud-test.conllu'
+        danish_train=os.getcwd()+'/da_ddt-ud-test.conllu'
         
         sentences_marathi_train=preprocess_2(pyconll.load_from_file(marathi_train))
         sentences_marathi_test=preprocess_2(pyconll.load_from_file(marathi_test))
-        sentences_hindi_train=pyconll.load_from_file(hindi_train)
-        sentences_hindi_test=pyconll.load_from_file(hindi_test)
+        sentences_marathi_dev=preprocess_2(pyconll.load_from_file(marathi_dev))
+        sentences_hindi_train=preprocess_2(pyconll.load_from_file(hindi_train))
+        sentences_magahi_train=preprocess_2(pyconll.load_from_file(bhojpuri_train))
+        sentences_bhojpuri_train=preprocess_2(pyconll.load_from_file(magahi_train))
+        sentences_sanskrit_train=preprocess_2(pyconll.load_from_file(sanskrit_train))
+        sentences_english_train=preprocess_2(pyconll.load_from_file(english_train))
+        sentences_german_train=preprocess_2(pyconll.load_from_file(german_train))
+        sentences_dutch_train=preprocess_2(pyconll.load_from_file(dutch_train))
+        sentences_danish_train=preprocess_2(pyconll.load_from_file(danish_train))
         
-        return  sentences_marathi_train, sentences_marathi_test, sentences_hindi_train, sentences_hindi_test
+        return sentences_sanskrit_train,sentences_marathi_train,sentences_marathi_test,sentences_marathi_dev,sentences_hindi_train,sentences_bhojpuri_train,sentences_magahi_train,sentences_english_train,sentences_german_train,sentences_dutch_train,sentences_danish_train
 
 
 def get_sentences(sentences_train,sentences_test,tags,max_len):
-        sentences_for_test=[]
         sentences_for_train=[]
-        tags_for_test=[]
         tags_for_train=[]
         
         for sentence in sentences_train:
@@ -42,29 +52,9 @@ def get_sentences(sentences_train,sentences_test,tags,max_len):
 #                        t.append(tags['X'])
                 sentences_for_train.append(k)
                 tags_for_train.append(t)
-                
-        for sentence in sentences_test:
-                k=[]
-                t=[]
-                for token in sentence:
-                        if token.form is not None:
-                                if token.form=="'":
-                                        k.append('"')
-                                elif token.form=='।':
-                                        k.append('.')
-                                else:
-                                        k.append(token.form)      
-                                t.append(tags[token.upos])
-#                k.append('EOS')
-#                t.append(tags['X'])
-#                for _ in range(len(k),max_len):
-#                        k.append('EOS')
-#                        t.append(tags['X'])
-                sentences_for_test.append(k)
-                tags_for_test.append(t)
-                
-        return sentences_for_train,sentences_for_test,tags_for_train,tags_for_test
-            
+
+        return sentences_for_train,tags_for_train
+
 def get_tokens(sentences):
         s=set()
         for sentence in sentences:
@@ -93,8 +83,10 @@ def get_characters(sentences):
         dict={}
         for i in range(len(s)):
                 dict[s[i]]=i
+
+        dict['pad']=len(s)
                 
-        return dict,len(s)
+        return dict,len(s)+1
 
 
 class DataLoader(object):
@@ -135,3 +127,28 @@ class DataLoader(object):
                 tags=torch.tensor(tags) #.cuda()
                 
                 return embedding,tags,sentence
+            
+            
+class Data_Loader(object):
+        def __init__(self,dataloaders,N,K,examples=3):
+                self.counter=0
+                self.K=K
+                self.data=[]
+                self.N=N
+
+                for _ in range(examples):
+                        for dataloader in dataloaders:
+                                for i in range(self.K):
+                                        self.data.append(dataloader.load_next())
+
+        def load_next(self,reuse=False):
+                data=self.data[self.counter]
+                if reuse:
+                        self.counter=(self.counter+1)%(self.N*self.K)
+                else:
+                        self.counter+=1
+
+                return data
+
+        def set_counter(self):
+                self.counter=self.N*self.K
