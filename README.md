@@ -14,11 +14,12 @@ python train.py
 ```
 Optional Arguments are: 
 ```
---learning_rate   The learning rate for MAML
---epsilon         The value of epsilon for updating model parameters in Reptile
---epochs          Number of epochs
---K_shot_learning How many sentences to sample for learning i.e 1-shot, 5-shot etc
---N_way_learning  How many tasks to test on
---hidden_size     Hidden size for LSTM units
---training_mode   MAML, Reptile which one to use for training the model
+--learning_rate          The learning rate for MAML
+--epsilon                The value of epsilon for updating model parameters in Reptile
+--epochs                 Number of epochs
+--K_shot_learning        How many sentences to sample for learning i.e 1-shot, 5-shot etc
+--N_way_learning         How many tasks to test on
+--hidden_size            Hidden size for LSTM units
+--training_mode          MAML, Reptile which one to use for training the model
+--inner_gradient_update  Number of inner gradient updates to perform
 ```
